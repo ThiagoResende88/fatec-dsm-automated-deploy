@@ -1,0 +1,53 @@
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  # Serviço da Aplicação Flask
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: app-flask:latest
+    container_name: flask_app_container
+    ports:
+      - "8218:8218"
+    volumes:
+      - .:/app 
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - DB_HOST=db
+      - DB_NAME=automated_deploy
+      - DB_USER=thiago
+      - DB_PASS=123
+
+    depends_on:
+      - db 
+    networks:
+      - app-network 
+
+
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db_container
+    environment: # Nível de indentação 1 (dentro de db)
+      POSTGRES_DB: automated_deploy
+      POSTGRES_USER: thiago
+      POSTGRES_PASSWORD: 123
+    volumes: # Nível de indentação 1 (dentro de db, MESMO NÍVEL que environment)
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports: # Nível de indentação 1 (dentro de db, MESMO NÍVEL que environment)
+      - "8219:5432"
+    networks: # Nível de indentação 1 (dentro de db, MESMO NÍVEL que environment)
+      - app-network
+
+# Define volumes nomeados (para persistência de dados)
+volumes:
+  postgres_data: # O Docker gerencia este volume
+
+# Define redes customizadas
+networks:
+  app-network:
+    driver: bridge # Usa o driver de rede bridge padrão

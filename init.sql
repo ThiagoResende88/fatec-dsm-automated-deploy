@@ -1,0 +1,8 @@
+-- init.sql
+CREATE TABLE IF NOT EXISTS tarefas (
+    id SERIAL PRIMARY KEY,
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    concluida BOOLEAN NOT NULL DEFAULT FALSE,
+    data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
