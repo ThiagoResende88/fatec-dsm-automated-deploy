@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Lista de Tarefas</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .concluida {
+            text-decoration: line-through;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Minha Lista de Tarefas</h1>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Título</th>
+                <th>Descrição</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tarefa in tarefas %}
+            <tr>
+                <td class="{{ 'concluida' if tarefa[3] else '' }}">{{ tarefa[1] }}</td>
+                <td class="{{ 'concluida' if tarefa[3] else '' }}">{{ tarefa[2] }}</td>
+                <td>{{ 'Concluída' if tarefa[3] else 'Pendente' }}</td>
+                <td>
+                    <a href="{{ url_for('edit_tarefa_form', id=tarefa[0]) }}">Editar</a> |
+                    <a href="{{ url_for('delete_tarefa', id=tarefa[0]) }}" onclick="return confirm('Tem certeza que deseja excluir esta tarefa?');">Excluir</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <hr>
+    <h2>Adicionar Nova Tarefa</h2>
+    <form method="POST" action="{{ url_for('add_tarefa') }}">
+        <label for="titulo">Título:</label><br>
+        <input type="text" id="titulo" name="titulo" required><br><br>
+        <label for="descricao">Descrição:</label><br>
+        <textarea id="descricao" name="descricao"></textarea><br><br>
+        <button type="submit">Adicionar</button>
+    </form>
+</body>
+
+</html>

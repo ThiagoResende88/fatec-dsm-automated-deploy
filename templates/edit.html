@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Tarefa</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        label { display: block; margin-top: 1em; }
+        input[type="text"], textarea { width: 100%; padding: 8px; margin-top: 0.5em; box-sizing: border-box; }
+        input[type="checkbox"] { margin-top: 0.5em; }
+        button { margin-top: 1.5em; padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        a { color: #007bff; text-decoration: none; display: inline-block; margin-top: 1em;}
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Editar Tarefa</h1>
+
+    <form method="POST" action="{{ url_for('update_tarefa', id=tarefa[0]) }}">
+        <div>
+            <label for="titulo">Título:</label>
+            <input type="text" id="titulo" name="titulo" value="{{ tarefa[1] }}" required>
+        </div>
+        <div>
+            <label for="descricao">Descrição:</label>
+            <textarea id="descricao" name="descricao">{{ tarefa[2] }}</textarea>
+        </div>
+        <div>
+            <label for="concluida">Concluída:</label>
+            <input type="checkbox" id="concluida" name="concluida" {% if tarefa[3] %}checked{% endif %}>
+        </div>
+        <button type="submit">Salvar Alterações</button>
+    </form>
+    <br>
+    <a href="{{ url_for('index') }}">Cancelar e Voltar para a Lista</a>
+</body>
+</html>
