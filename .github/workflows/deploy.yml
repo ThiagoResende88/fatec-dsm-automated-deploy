@@ -33,7 +33,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: thiagoresende88/app-flask-fatec:latest # Verifique se este é o seu repo correto
+          tags: thiagoresende/app-flask-fatec:latest # Verifique se este é o seu repo correto
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
