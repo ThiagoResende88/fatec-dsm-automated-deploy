@@ -64,7 +64,7 @@ jobs:
 
       - name: Executar Análise SonarQube no Servidor Remoto
         env:
-          SONAR_HOST_URL: http://${{ secrets.SSH_HOST }}:9000 # Porta padrão do SonarQube
+          SONAR_HOST_URL: http://${{ secrets.SSH_HOST }}:8220 # Porta padrão do SonarQube
           SONAR_LOGIN: admin # Usuário padrão do SonarQube
           SONAR_PASSWORD: admin # Senha padrão do SonarQube (para a imagem Docker padrão)
           # Ou use um token: SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_SECRET }}
@@ -75,12 +75,19 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # ----- DEBUG DO VM.MAX_MAP_COUNT-----
+            echo "---- Verificando configurações do servidor host ----"
+            echo "Valor de vm.max_map_count no servidor:"
+            sysctl vm.max_map_count
+            echo "----------------------------------------------------"
+            # ----- FIM DAS LINHAS DE DEBUG -----
+
             echo "---- Iniciando SonarQube Container no Servidor Remoto ----"
             # Parar e remover container SonarQube antigo, se existir (para garantir um início limpo)
             docker stop sonarqube_temp || true
             docker rm sonarqube_temp || true
             # Iniciar SonarQube em modo detached
-            docker run -d --name sonarqube_temp -p 9000:9000 sonarqube:community
+            docker run -d --name sonarqube_temp -p 8220:9000 sonarqube:community
             
             echo "---- Aguardando SonarQube iniciar (pode levar alguns minutos) ----"
             # Loop simples para aguardar o SonarQube ficar pronto (timeout após 5 minutos)
