@@ -1,187 +1,163 @@
-name: CI/CD Pipeline
+# .github/workflows/deploy.yml
+
+name: CI/CD Deploy Automatizado Fatec
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-push-docker-image:
+    name: Build e Push Imagem Docker
     runs-on: ubuntu-latest
-
-    services:
-      db:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-        ports:
-          - 8087:3306
-        options: --health-cmd="mysqladmin ping -h localhost" --health-interval=30s --health-timeout=10s --health-retries=5
-
-    # Adicionada a chave 'steps:' aqui
     steps:
-      - name: Checkout código fonte
+      - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Configurar QEMU (caso build multi-arquitetura)
-        uses: docker/setup-qemu-action@v1
+      - name: Configurar QEMU
+        uses: docker/setup-qemu-action@v3
 
-      - name: Build Docker image
-        run: |
-          docker build -t danilobenedetti/app_crud_flask:latest .
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Logar no Docker Hub
-        uses: docker/login-action@v2
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push Docker image para Docker Hub
-        run: |
-          docker push danilobenedetti/app_crud_flask:latest
-
-      - name: Configura chave SSH no agente
-        uses: webfactory/ssh-agent@v0.9.0
+      - name: Build e Push da imagem Docker
+        uses: docker/build-push-action@v5
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          context: .
+          push: true
+          tags: thiagoresende/app-flask-fatec:latest # Verifique se este é o seu repo correto
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Subir SonarQube temporário no servidor remoto (com checagem)
+  analyze-with-sonarqube:
+    name: Análise de Código com SonarQube
+    runs-on: ubuntu-latest
+    needs: build-and-push-docker-image # Este job depende do anterior
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Necessário para análise precisa do SonarQube (histórico completo)
+
+      - name: Configurar Java (SonarScanner precisa de Java)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin' # Ou 'zulu', 'adopt'
+          java-version: '17'     # SonarScanner geralmente requer Java 11 ou 17
+
+      - name: Download e Configuração do SonarScanner
         run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
-            docker stop sonartmp || true && docker rm sonartmp || true
-            docker pull sonarqube:community
-            docker run -d --name sonartmp -p 8088:9000 sonarqube:community
-            sleep 10
-            if ! docker ps | grep sonartmp; then
-              echo "--- Falha ao iniciar SonarQube ---"
-              docker logs sonartmp || true
-              exit 1
-            fi
-          '
+          mkdir -p $HOME/.sonar
+          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -O $HOME/.sonar/sonar-scanner.zip
+          unzip -q $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+          echo "$HOME/.sonar/sonar-scanner-5.0.1.3006-linux/bin" >> $GITHUB_PATH
+        # Verifique a versão mais recente do SonarScanner se desejar
 
-      - name: Download and install jq on remote server
-        run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
-            wget -qO /home/aluno/jq https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 && chmod +x /home/aluno/jq
-          '
-
-      - name: Esperar SonarQube inicializar completamente via API (com log e timeout)
+      - name: Executar Análise SonarQube no Servidor Remoto
         env:
-          SONAR_USER: admin # Considere usar secrets aqui também
-          SONAR_PASS: admin # Considere usar secrets aqui também
-        run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
-            # Este bloco inteiro será executado no servidor remoto (201.23.3.86)
+          SONAR_HOST_URL: http://${{ secrets.SSH_HOST }}:8220 # Porta padrão do SonarQube
+          SONAR_LOGIN: admin # Usuário padrão do SonarQube
+          SONAR_PASSWORD: admin # Senha padrão do SonarQube (para a imagem Docker padrão)
+          # Ou use um token: SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_SECRET }}
+          # E no sonar-project.properties, use sonar.login=${SONAR_TOKEN}
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # ----- DEBUG DO VM.MAX_MAP_COUNT-----
+            echo "---- Verificando configurações do servidor host ----"
+            echo "Valor de vm.max_map_count no servidor:"
+            sysctl vm.max_map_count
+            echo "----------------------------------------------------"
+            # ----- FIM DAS LINHAS DE DEBUG -----
 
-            # Define o caminho absoluto para o jq
-            JQ_PATH="/home/aluno/jq"
-
-            echo "Aguardando SonarQube atingir status '"UP"'..."
-            for i in {1..50}; do
-              # Usa sintaxe correta para curl -u e caminho absoluto para jq
-              STATUS=$(curl -s -u "$SONAR_USER:$SONAR_PASS" "http://localhost:8088/api/system/status" | "$JQ_PATH" -r .status)
-              echo "Status atual: $STATUS"
-              if [ "$STATUS" = "UP" ]; then
-                echo "SonarQube online."
-                exit 0
+            echo "---- Iniciando SonarQube Container no Servidor Remoto ----"
+            # Parar e remover container SonarQube antigo, se existir (para garantir um início limpo)
+            docker stop sonarqube_temp || true
+            docker rm sonarqube_temp || true
+            # Iniciar SonarQube em modo detached
+            docker run -d --name sonarqube_temp -p 8220:9000 sonarqube:community
+            
+            echo "---- Aguardando SonarQube iniciar (pode levar alguns minutos) ----"
+            # Loop simples para aguardar o SonarQube ficar pronto (timeout após 5 minutos)
+            timeout=300 # 5 minutos
+            interval=10 # 10 segundos
+            elapsed=0
+            until $(curl --output /dev/null --silent --head --fail $SONAR_HOST_URL/api/system/status); do
+              if [ $elapsed -ge $timeout ]; then
+                echo "Timeout: SonarQube não iniciou em $timeout segundos."
+                docker logs sonarqube_temp # Mostrar logs para debug
+                docker stop sonarqube_temp && docker rm sonarqube_temp
+                exit 1
               fi
-              sleep 6
+              printf '.'
+              sleep $interval
+              elapsed=$(($elapsed + $interval))
             done
-            echo "SonarQube não subiu a tempo! Log:"
-            docker logs sonartmp
-            exit 1
-          '
+            echo "SonarQube iniciado e pronto!"
 
-      - name: Criar token do admin via API REST
-        id: get_sonar_token
-        env:
-          SONAR_USER: admin # Considere usar secrets aqui também
-          SONAR_PASS: admin # Considere usar secrets aqui também
-        run: |
-          # Define o caminho absoluto para o jq
-          JQ_PATH="/home/aluno/jq"
-          # Executa o comando via SSH usando o caminho absoluto do jq
-          SONAR_TOKEN=$(ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 "curl -s -u \"$SONAR_USER:$SONAR_PASS\" -X POST 'http://localhost:8088/api/user_tokens/generate?name=ci-token' | \"$JQ_PATH\" -r .token")
-          echo "::add-mask::$SONAR_TOKEN"
-          echo "SONAR_TOKEN=$SONAR_TOKEN" >> $GITHUB_ENV
+            echo "---- Executando SonarScanner a partir da máquina do GitHub Actions ----"
+            # O SonarScanner rodará na máquina do GitHub Actions, mas apontará para o SonarQube no servidor remoto.
+            # O código fonte já está na máquina do GitHub Actions devido ao checkout.
+            sonar-scanner \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_LOGIN \
+              -Dsonar.password=$SONAR_PASSWORD 
+              # Se usar token: -Dsonar.login=$SONAR_TOKEN
+              # Adicione -Dsonar.projectKey, -Dsonar.sources se não estiverem no sonar-project.properties
+            
+            ANALYSIS_STATUS_URL="$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=fatec-dsm-flask-app" # Use seu projectKey
+            echo "---- Verificando Quality Gate do SonarQube (URL: $ANALYSIS_STATUS_URL) ----"
+            # Loop para aguardar o resultado da análise (timeout após 2 minutos)
+            timeout_analysis=120
+            elapsed_analysis=0
+            quality_gate_status="NONE" # Inicializa com um valor que não seja "OK"
+            
+            sleep 20 # Dá um tempo para a análise ser processada no SonarQube
 
-      - name: Instalar SonarScanner CLI
-        run: |
-          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip -o sonar-scanner.zip
+            while [ "$quality_gate_status" != "OK" ] && [ $elapsed_analysis -lt $timeout_analysis ]; do
+              # Tenta obter o status. O jq é útil para parsear JSON, mas vamos tentar com grep por simplicidade
+              # Se tiver jq instalado no runner:
+              # quality_gate_status=$(curl -s -u $SONAR_LOGIN:$SONAR_PASSWORD $ANALYSIS_STATUS_URL | jq -r '.projectStatus.status')
+              # Sem jq, uma forma mais simples (pode precisar de ajuste):
+              response=$(curl -s -u $SONAR_LOGIN:$SONAR_PASSWORD $ANALYSIS_STATUS_URL)
+              echo "Resposta da API do Quality Gate: $response" # Para debug
+              if echo "$response" | grep -q '"status":"OK"'; then
+                quality_gate_status="OK"
+              elif echo "$response" | grep -q '"status":"ERROR"'; then
+                quality_gate_status="ERROR"
+                break # Sai do loop se for ERROR
+              elif echo "$response" | grep -q '"status":"WARN"'; then
+                quality_gate_status="WARN" # Pode ser aceitável dependendo do seu Quality Gate
+                # Para este exemplo, vamos considerar WARN como falha para ser mais rigoroso
+                # quality_gate_status="OK" # Se WARN for aceitável
+                break 
+              fi
+              echo "Status atual do Quality Gate: $quality_gate_status (aguardando... $elapsed_analysis s)"
+              sleep $interval
+              elapsed_analysis=$(($elapsed_analysis + $interval))
+            done
 
-      - name: Rodar análise SonarScanner apontando para SonarQube remoto
-        env:
-          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
-        run: |
-          export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
-          sonar-scanner \
-            -Dsonar.projectKey=danilo_crud_flask \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=http://201.23.3.86:8088 \
-            -Dsonar.token=$SONAR_TOKEN
+            echo "---- Finalizando e Removendo SonarQube Container ----"
+            docker stop sonarqube_temp
+            docker rm sonarqube_temp
+            echo "SonarQube container parado e removido."
 
-      - name: Validar Quality Gate do SonarQube remoto
-        env:
-          SONAR_USER: admin
-          SONAR_PASS: admin
-        run: |
-          echo "Aguardando Quality Gate..."
-          sleep 10
-          for i in {1..30}; do
-            QG=$(curl -u $SONAR_USER:$SONAR_PASS "http://201.23.3.86:8088/api/qualitygates/project_status?projectKey=danilo_crud_flask" | jq -r .projectStatus.status)
-            echo "Quality Gate: $QG"
-            if [[ "$QG" == "OK" ]]; then exit 0; fi
-            if [[ "$QG" == "ERROR" ]]; then echo "Quality Gate falhou"; exit 1; fi
-            sleep 6
-          done
-          echo "Quality Gate não retornou status OK/ERROR a tempo"
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 'docker logs sonartmp'
-          exit 1
-
-      - name: Parar e remover SonarQube temporário (sempre executa)
-        if: always()
-        run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
-            docker stop sonartmp || true
-            docker rm sonartmp || true
-          '
-
-      - name: Garantir que o diretório de deploy existe
-        run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 'mkdir -p /home/aluno/Danilo'
-
-      - name: Gerar .env com secrets do GitHub
-        run: |
-          cat > .env <<EOF
-          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-          MYSQL_USER=${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-          EOF
-
-      - name: Enviar docker-compose.yml por SCP
-        run: |
-          scp -o StrictHostKeyChecking=no docker-compose.yml aluno@201.23.3.86:/home/aluno/Danilo/
-
-      - name: Enviar .env para o servidor via SCP
-        run: |
-          scp -o StrictHostKeyChecking=no .env aluno@201.23.3.86:/home/aluno/Danilo/
-
-      - name: Enviar código e Dockerfile para o servidor remoto
-        # Considere ser mais seletivo aqui do que copiar '*'
-        run: |
-          scp -o StrictHostKeyChecking=no -r * aluno@201.23.3.86:/home/aluno/Danilo/
-
-      - name: Executar deploy remoto via SSH
-        run: |
-          ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
-            # CORRIGIDO: Mudar para o diretório onde os arquivos foram copiados
-            cd /home/aluno/Danilo
-            docker compose down
-            docker compose pull
-            docker compose up -d --build
-          '
+            if [ "$quality_gate_status" = "OK" ]; then
+              echo "Quality Gate APROVADO!"
+              exit 0
+            else
+              echo "Quality Gate REPROVADO ou Timeout! Status: $quality_gate_status"
+              exit 1 # Falha o job
+            fi
