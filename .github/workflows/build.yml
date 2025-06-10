@@ -97,7 +97,7 @@ jobs:
             docker compose -f docker-compose.prod.yml pull
                         
             echo "---- Subindo os containers com a nova imagem ----"
-            docker compose up -d --remove-orphans
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
             
             echo "---- Deploy concluído! Verificando containers... ----"
             sleep 15
