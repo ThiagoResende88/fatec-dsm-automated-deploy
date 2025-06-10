@@ -1,0 +1,27 @@
+name: Build e Análise SonarCloud
+
+on:
+  push:
+    branches:
+      - main 
+  pull_request:
+    types: [opened, synchronize, reopened] 
+
+jobs:
+  build-and-analyze: 
+    name: Build, Análise e Qualidade de Código
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Faz o checkout do código para a máquina do GitHub Actions
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Executa a Action oficial do SonarCloud
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5 
+        env:
+          # O token de acesso que você gerou no SonarCloud
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
