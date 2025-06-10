@@ -80,7 +80,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "docker-compose.yml"
+          source: "docker-compose.prod.yml,init.sql"
           target: "/home/aluno/app-flask-crud"
           
       - name: Executar Deploy com Docker Compose
@@ -94,8 +94,8 @@ jobs:
             cd /home/aluno/app-flask-crud
             
             echo "---- Fazendo pull da imagem mais recente do Docker Hub ----"
-            docker compose pull
-            
+            docker compose -f docker-compose.prod.yml pull
+                        
             echo "---- Subindo os containers com a nova imagem ----"
             docker compose up -d --remove-orphans
             
@@ -111,14 +111,11 @@ jobs:
             echo "----------------------------------------------------"
           
             echo "PASSO 2: Verificando logs do container da aplicação (flask_app_container)"
-            # 'flask_app_container' é o nome que definimos no nosso docker-compose.yml
             docker logs flask_app_container
   
             echo "----------------------------------------------------"
 
             echo "PASSO 3: Testando conexão localmente no servidor (curl)"
-            # Tenta acessar a aplicação de dentro do próprio servidor para testar se a porta está aberta localmente
-            # O '-I' pega apenas os cabeçalhos da resposta. Se funcionar, veremos 'HTTP/1.1 200 OK'.
             curl -I http://localhost:8218
 
             echo "==== FIM DO DIAGNÓSTICO ===="

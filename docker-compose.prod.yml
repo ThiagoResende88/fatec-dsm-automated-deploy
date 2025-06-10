@@ -1,0 +1,41 @@
+services:
+  web:
+    image: thiagoresende/app-flask-fatec:latest
+    container_name: flask_app_container
+    ports:
+      - "8218:8218"
+    environment:
+      # As variáveis de ambiente para conexão com o banco
+      - DB_HOST=db
+      - DB_NAME=automated_deploy
+      - DB_USER=thiago
+      - DB_PASS=123
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db_container
+    environment:
+      POSTGRES_DB: automated_deploy
+      POSTGRES_USER: thiago
+      POSTGRES_PASSWORD: 123
+    volumes:
+      # Volume para persistir os dados do banco
+      - postgres_data:/var/lib/postgresql/data
+      # Script para criar a tabela na primeira inicialização
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    # Não precisamos expor a porta do banco para o mundo exterior,
+    # a menos que você queira acessá-lo com uma ferramenta como o DBeaver.
+    # A comunicação entre os containers 'web' e 'db' acontece pela 'app-network'.
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
