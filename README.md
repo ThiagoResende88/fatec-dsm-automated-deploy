@@ -57,12 +57,13 @@ A aplicação web consiste em um sistema de gerenciamento de tarefas (To-Do List
 ```
 ## 🚀 Como Executar o Projeto
 
+Existem duas maneiras principais de executar o projeto: localmente com um ambiente Python ou utilizando Docker, que é o método recomendado.
+
 ### Pré-requisitos
 
-- Git
-- Python 3.9+ e Pip
-- Docker e Docker Compose
-- PostgreSQL (apenas para execução local sem Docker)
+* Git
+* Python 3.9+ e Pip
+* Docker e Docker Compose
 
 ### Executando Localmente (sem Docker)
 
@@ -76,6 +77,7 @@ A aplicação web consiste em um sistema de gerenciamento de tarefas (To-Do List
     ```bash
     python3 -m venv venv
     source venv/bin/activate
+    # No Windows, use: venv\Scripts\activate
     ```
 
 3.  **Instale as dependências:**
@@ -83,76 +85,62 @@ A aplicação web consiste em um sistema de gerenciamento de tarefas (To-Do List
     pip install -r requirements.txt
     ```
 
-4.  **Configure o PostgreSQL localmente:**
-    * Certifique-se de ter o PostgreSQL instalado e rodando.
-    * Crie um usuário e um banco de dados conforme as credenciais que serão usadas. Exemplo:
-      ```sql
-      -- No psql
-      CREATE USER thiago WITH PASSWORD '123';
-      CREATE DATABASE automated_deploy OWNER thiago;
-      GRANT ALL PRIVILEGES ON DATABASE automated_deploy TO thiago;
-      ```
-    * Crie a tabela `tarefas` no banco `automated_deploy` executando o conteúdo do arquivo `init.sql`.
+4.  **Configure o PostgreSQL localmente** e crie um arquivo `.env` na raiz do projeto com as credenciais do seu banco de dados, seguindo o exemplo do `.gitignore`.
 
-5.  **Crie um arquivo `.env`** na raiz do projeto com as credenciais do seu banco de dados local:
-    ```env
-    DB_HOST=localhost
-    DB_NAME=automated_deploy
-    DB_USER=thiago
-    DB_PASS=123
-    ```
-
-6.  **Execute a aplicação Flask:**
+5.  **Execute a aplicação Flask:**
     ```bash
     python app.py
     ```
     A aplicação estará disponível em `http://localhost:8218`.
 
-### Executando com Docker Compose (Recomendado)
+### Executando com Docker Compose para Desenvolvimento (Recomendado)
 
-Este método gerencia a aplicação Flask e o banco de dados PostgreSQL em containers Docker.
+Este método é ideal para o desenvolvimento local, pois cria um ambiente completo e isolado com a aplicação e o banco de dados.
 
-1.  **Clone o repositório (se ainda não o fez):**
-    ```bash
-    git clone [https://github.com/ThiagoResende88/fatec-dsm-automated-deploy.git](https://github.com/ThiagoResende88/fatec-dsm-automated-deploy.git)
-    cd fatec-dsm-automated-deploy
-    ```
+1.  **Clone o repositório**, caso ainda não o tenha feito.
 
 2.  **Certifique-se de que o Docker e o Docker Compose estão instalados e rodando.**
 
-3.  **Suba os serviços com Docker Compose:**
+3.  **Suba os serviços com o `docker-compose.yml`:**
     ```bash
     docker-compose up --build
     ```
-    * O comando `--build` garante que a imagem da aplicação seja construída (ou reconstruída se houver alterações no `Dockerfile` ou código).
-    * Na primeira vez, o container do PostgreSQL será inicializado e o script `init.sql` criará a tabela `tarefas`.
-    * As variáveis de ambiente para a conexão com o banco já estão configuradas no `docker-compose.yml` para a comunicação entre containers.
+    * Este comando usa o arquivo `docker-compose.yml`, que foi projetado para desenvolvimento.
+    * `--build`: Garante que a imagem Docker da aplicação seja construída a partir do `Dockerfile`.
+    * **Live Reload:** O código da sua máquina é espelhado dentro do container (`volumes: .:/app`). Qualquer alteração no código-fonte será refletida automaticamente na aplicação, sem a necessidade de reconstruir a imagem.
+    * O banco de dados PostgreSQL é iniciado e a porta `8219` é exposta para que você possa acessá-lo com uma ferramenta externa (como DBeaver).
 
 4.  **Acesse a aplicação:**
     Abra seu navegador e acesse `http://localhost:8218`.
 
 5.  **Para parar os serviços:**
-    Pressione `Ctrl+C` no terminal onde o `docker-compose up` está rodando, e depois execute:
-    ```bash
-    docker-compose down
-    ```
-    Para remover os volumes (e apagar os dados do banco), use `docker-compose down -v`.
+    Pressione `Ctrl+C` no terminal e depois execute `docker-compose down`.
+
+---
 
 ## 🔄 Pipeline de CI/CD
 
-O projeto utiliza GitHub Actions para Integração Contínua e Deploy Contínuo. O workflow está definido em `.github/workflows/deploy.yml` e é acionado em pushes para a branch `main`.
+O projeto utiliza GitHub Actions para automação, conforme definido em `.github/workflows/build.yml`. O workflow é acionado em cada `push` para a branch `main`.
 
-As etapas do pipeline (conforme o objetivo do trabalho) são:
-1.  **Build da Imagem Docker:** Constrói a imagem da aplicação Flask.
-2.  **Push para o Docker Hub:** Envia a imagem construída para o repositório `thiagoresende/app-flask-fatec` no Docker Hub.
-3.  **Análise com SonarQube (no servidor remoto):**
-    * Conecta-se via SSH ao servidor `201.23.3.86`.
-    * Inicia um container SonarQube temporariamente.
-    * Executa o SonarScanner para analisar o código.
-    * Verifica o Quality Gate. Se reprovado, o pipeline falha.
-    * Para e remove o container SonarQube.
-4.  **Deploy no Servidor Remoto (se SonarQube aprovar):**
-    * (A ser implementado) Implanta a aplicação (usando a imagem do Docker Hub) no servidor `201.23.3.86`.
+A pipeline é dividida em três etapas (jobs) principais:
+
+1.  **Build e Push da Imagem Docker (`build-and-push`)**:
+    * Constrói a imagem Docker da aplicação Flask.
+    * Envia a imagem construída para um registro central, o Docker Hub, com a tag `thiagoresende/app-flask-fatec:latest`. Isso cria um artefato imutável que será usado nas etapas seguintes.
+
+2.  **Análise de Qualidade com SonarCloud (`sonarcloud-analysis`)**:
+    * Este job é executado após o build.
+    * Ele analisa o código-fonte em busca de bugs, vulnerabilidades e "code smells" usando o SonarCloud.
+    * Funciona como um **Portão de Qualidade (Quality Gate)**: se o código não atender aos critérios mínimos de qualidade, a pipeline falha e o deploy é interrompido.
+
+3.  **Deploy no Servidor Remoto (`deploy-to-server`)**:
+    * Este job só é executado se a análise do SonarCloud for aprovada.
+    * Ele se conecta ao servidor de produção via SSH.
+    * Copia o arquivo `docker-compose.prod.yml` para o servidor. Este arquivo é otimizado para produção.
+    * **Executa o deploy**, onde:
+        * `docker compose pull`: Baixa a imagem mais recente do Docker Hub (a mesma que foi construída no passo 1).
+        * `docker compose up -d`: Inicia a nova versão da aplicação e do banco de dados em modo detached, usando o `docker-compose.prod.yml`. Este arquivo de produção **não expõe a porta do banco de dados** para o exterior e usa a imagem pronta, garantindo mais segurança e consistência.
+        * **Verificação**: Ao final, o script executa comandos de diagnóstico (`docker ps`, `docker logs`) para verificar se os containers subiram corretamente.
 
 ## 🌐 Acesso à Aplicação em Produção (Após Deploy)
 
